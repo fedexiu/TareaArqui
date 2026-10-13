@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat + Búsqueda</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #fff; --side: #eceef2; --text: #1f2328; --muted: #6a737d;
+    --border: #d8dce2; --accent: #5865f2; --accent-text: #fff; --mark: #fff2a8; --danger: #d1242f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1f22; --panel: #2b2d31; --side: #232428; --text: #e6e6e6; --muted: #9a9ca3;
+      --border: #3a3c42; --accent: #5865f2; --accent-text: #fff; --mark: #6b5b00; --danger: #ff6b6b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--text);
+         height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+  header { display: flex; gap: 12px; align-items: center; padding: 10px 16px;
+           background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0 auto 0 0; }
+  main { display: grid; grid-template-columns: 200px 1fr 380px; min-height: 0; }
+  aside, section { min-height: 0; display: flex; flex-direction: column; }
+  #channels { background: var(--side); border-right: 1px solid var(--border); padding: 12px; gap: 4px; }
+  #channels button.ch { text-align: left; background: none; color: var(--muted); border: 0; padding: 6px 8px;
+                        border-radius: 4px; cursor: pointer; font: inherit; }
+  #channels button.ch.active, #channels button.ch:hover { background: var(--border); color: var(--text); }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 8px; }
+  #chat { background: var(--panel); }
+  #messages, #results { flex: 1; overflow-y: auto; padding: 12px 16px; }
+  .msg { padding: 6px 8px; border-radius: 4px; }
+  .msg:hover { background: var(--bg); }
+  .msg .meta { font-size: 12px; color: var(--muted); display: flex; gap: 8px; align-items: baseline; }
+  .msg .meta b { color: var(--text); font-size: 14px; }
+  .msg .actions { margin-left: auto; visibility: hidden; display: flex; gap: 4px; }
+  .msg:hover .actions { visibility: visible; }
+  .msg .content { white-space: pre-wrap; word-break: break-word; }
+  .mention { background: color-mix(in srgb, var(--accent) 25%, transparent); border-radius: 3px; padding: 0 2px; }
+  mark { background: var(--mark); color: inherit; }
+  form.composer { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
+  input, select, button { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border);
+                          border-radius: 6px; padding: 6px 10px; }
+  input { min-width: 0; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.link { background: none; border: 0; padding: 0 4px; color: var(--muted); font-size: 12px; }
+  button.link:hover { color: var(--text); }
+  button.link.danger:hover { color: var(--danger); }
+  form.composer input { flex: 1; }
+  #search { background: var(--side); border-left: 1px solid var(--border); }
+  #search form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 16px;
+                 border-bottom: 1px solid var(--border); }
+  #search form .full { grid-column: 1 / -1; }
+  #search label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
+  .checks { display: flex; gap: 12px; font-size: 13px; }
+  .summary { font-size: 12px; color: var(--muted); padding: 8px 16px 0; }
+  .result { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; }
+  .result .where { font-size: 12px; color: var(--muted); }
+  #status { font-size: 12px; color: var(--muted); padding: 8px 16px; border-top: 1px solid var(--border); }
+  #status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #2da44e; margin-right: 4px; }
+  #status .dot.lag { background: #d4a72c; }
+  #status .dot.down { background: var(--danger); }
+  .pager { display: flex; justify-content: space-between; padding: 0 16px 8px; }
+  .empty { color: var(--muted); text-align: center; padding: 24px; }
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--danger);
+           color: #fff; padding: 8px 14px; border-radius: 6px; display: none; }
+  @media (max-width: 900px) {
+    body { height: auto; }
+    main { grid-template-columns: 1fr; }
+    #messages, #results { max-height: 50vh; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>💬 Chat + 🔎 Búsqueda</h1>
+  <label>Escribiendo como
+    <select id="me"></select>
+  </label>
+  <form id="new-user"><input name="name" placeholder="Nuevo usuario" maxlength="80" required> <button>Crear</button></form>
+</header>
+<main>
+  <aside id="channels">
+    <h2>Canales</h2>
+    <div id="channel-list" style="display:flex;flex-direction:column;gap:2px"></div>
+    <form id="new-channel" style="display:flex;gap:4px;margin-top:8px">
+      <input name="name" placeholder="nuevo-canal" maxlength="80" required style="width:100%">
+      <button>+</button>
+    </form>
+  </aside>
+
+  <section id="chat">
+    <div id="messages"><div class="empty">Elige un canal</div></div>
+    <form class="composer" id="composer">
+      <input name="content" placeholder="Escribe un mensaje… (menciona con @nombre)" maxlength="4000" autocomplete="off" required>
+      <button class="primary">Enviar</button>
+    </form>
+  </section>
+
+  <aside id="search">
+    <form id="search-form">
+      <h2 class="full" style="margin:0">Buscar mensajes</h2>
+      <input class="full" name="content" placeholder="Texto a buscar…">
+      <label>Autor <select name="author_id"><option value="">Cualquiera</option></select></label>
+      <label>Canal <select name="channel_id"><option value="">Todos</option></select></label>
+      <label>Menciona a <select name="mentions"><option value="">Nadie en particular</option></select></label>
+      <label>Orden
+        <select name="sort">
+          <option value="timestamp:desc">Más recientes</option>
+          <option value="timestamp:asc">Más antiguos</option>
+          <option value="relevance:desc">Relevancia</option>
+        </select>
+      </label>
+      <div class="checks full">
+        <label style="flex-direction:row;gap:4px"><input type="checkbox" name="has" value="link"> tiene link</label>
+        <label style="flex-direction:row;gap:4px"><input type="checkbox" name="has" value="mention"> tiene mención</label>
+      </div>
+      <button class="primary full">Buscar</button>
+    </form>
+    <div class="summary" id="summary"></div>
+    <div id="results"></div>
+    <div class="pager" id="pager"></div>
+    <div id="status">Estado del índice…</div>
+  </aside>
+</main>
+<div id="toast"></div>
+
+<script>
+const API = "/api/v1";
+const PAGE = 25;
+const state = { users: new Map(), channels: new Map(), channel: null, offset: 0 };
+const $ = (sel) => document.querySelector(sel);
+
+async function api(path, options = {}) {
+  const res = await fetch(API + path, {
+    headers: { "content-type": "application/json" }, ...options,
+  });
+  if (res.status === 204) return null;
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.detail ? JSON.stringify(body.detail) : res.statusText);
+  return { status: res.status, body };
+}
+
+function toast(text) {
+  const el = $("#toast");
+  el.textContent = text; el.style.display = "block";
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => (el.style.display = "none"), 3500);
+}
+
+const escape = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const userName = (id) => state.users.get(id)?.display_name ?? id.slice(0, 8);
+const time = (iso) => new Date(iso).toLocaleString();
+
+// Muestra <@id> como @nombre, los links como enlaces y **hit** como <mark>.
+function render(text) {
+  return escape(text)
+    .replace(/&lt;@([0-9a-f-]{36})&gt;/gi, (_, id) => `<span class="mention">@${escape(userName(id))}</span>`)
+    .replace(/https?:\/\/[^\s<]+/g, (url) => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`)
+    .replace(/\*\*(.+?)\*\*/g, "<mark>$1</mark>");
+}
+
+// Convierte "@nombre" en "<@id>" antes de enviar.
+function encodeMentions(text) {
+  return text.replace(/@([\wáéíóúñÁÉÍÓÚÑ.-]+)/g, (match, name) => {
+    const user = [...state.users.values()].find((u) => u.display_name.toLowerCase() === name.toLowerCase());
+    return user ? `<@${user.id}>` : match;
+  });
+}
+
+function fillSelect(select, items, label, keepFirst = true) {
+  const current = select.value;
+  const first = keepFirst ? select.options[0].outerHTML : "";
+  select.innerHTML = first + items.map((i) => `<option value="${i.id}">${escape(label(i))}</option>`).join("");
+  if ([...select.options].some((o) => o.value === current)) select.value = current;
+}
+
+async function loadUsers() {
+  const { body } = await api("/users");
+  state.users = new Map(body.map((u) => [u.id, u]));
+  const users = [...state.users.values()].sort((a, b) => a.display_name.localeCompare(b.display_name));
+  fillSelect($("#me"), users, (u) => u.display_name, false);
+  fillSelect($("[name=author_id]"), users, (u) => u.display_name);
+  fillSelect($("[name=mentions]"), users, (u) => u.display_name);
+}
+
+async function loadChannels() {
+  const { body } = await api("/channels");
+  state.channels = new Map(body.map((c) => [c.id, c]));
+  const channels = [...state.channels.values()].sort((a, b) => a.name.localeCompare(b.name));
+  fillSelect($("[name=channel_id]"), channels, (c) => "#" + c.name);
+  $("#channel-list").innerHTML = channels.map((c) =>
+    `<button class="ch ${c.id === state.channel ? "active" : ""}" data-id="${c.id}"># ${escape(c.name)}</button>`).join("");
+  if (!state.channel && channels.length) selectChannel(channels[0].id);
+}
+
+function selectChannel(id) {
+  state.channel = id;
+  document.querySelectorAll("#channel-list .ch").forEach((b) => b.classList.toggle("active", b.dataset.id === id));
+  $("#composer [name=content]").placeholder = `Mensaje en #${state.channels.get(id)?.name ?? ""} (menciona con @nombre)`;
+  loadMessages(true);
+}
+
+async function loadMessages(scroll = false) {
+  if (!state.channel) return;
+  const box = $("#messages");
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  const { body } = await api(`/channels/${state.channel}/messages`);
+  body.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const me = $("#me").value;
+  box.innerHTML = body.length ? body.map((m) => `
+    <div class="msg" data-id="${m.id}">
+      <div class="meta"><b>${escape(userName(m.author_id))}</b> ${time(m.created_at)}
+        ${m.edited_at ? "(editado)" : ""} <span>v${m.version}</span>
+        ${m.author_id === me ? `<span class="actions">
+          <button class="link" data-act="edit">editar</button>
+          <button class="link danger" data-act="delete">borrar</button></span>` : ""}
+      </div>
+      <div class="content">${render(m.content)}</div>
+    </div>`).join("") : `<div class="empty">Aún no hay mensajes</div>`;
+  box._messages = new Map(body.map((m) => [m.id, m]));
+  if (scroll || atBottom) box.scrollTop = box.scrollHeight;
+}
+
+async function runSearch(offset = 0) {
+  state.offset = offset;
+  const form = new FormData($("#search-form"));
+  const params = new URLSearchParams();
+  for (const key of ["content", "author_id", "channel_id", "mentions"]) {
+    if (form.get(key)) params.set(key, form.get(key));
+  }
+  form.getAll("has").forEach((h) => params.append("has", h));
+  const [sortBy, sortOrder] = form.get("sort").split(":");
+  params.set("sort_by", sortBy); params.set("sort_order", sortOrder);
+  params.set("limit", PAGE); params.set("offset", offset);
+  const started = performance.now();
+  const results = $("#results");
+  try {
+    const { status, body } = await api(`/search/messages?${params}`);
+    const ms = Math.round(performance.now() - started);
+    if (status === 202) {
+      $("#summary").textContent = `${body.message} (reintentar en ${body.retry_after}s)`;
+      results.innerHTML = ""; $("#pager").innerHTML = "";
+      return;
+    }
+    $("#summary").textContent = `${body.total_results} resultado(s) · ${ms} ms`;
+    results.innerHTML = body.messages.length ? body.messages.map((m) => `
+      <div class="msg result" data-channel="${m.channel_id}">
+        <div class="meta"><b>${escape(userName(m.author_id))}</b>
+          <span class="where">#${escape(state.channels.get(m.channel_id)?.name ?? "?")} · ${time(m.created_at)}</span></div>
+        <div class="content">${render(m.highlights[0] ?? m.content)}</div>
+      </div>`).join("") : `<div class="empty">Sin resultados</div>`;
+    const prev = offset > 0 ? `<button class="link" data-offset="${offset - PAGE}">← anteriores</button>` : "<span></span>";
+    const next = offset + PAGE < body.total_results ? `<button class="link" data-offset="${offset + PAGE}">siguientes →</button>` : "";
+    $("#pager").innerHTML = prev + next;
+  } catch (error) {
+    $("#summary").textContent = "La búsqueda no está disponible: " + error.message;
+    results.innerHTML = "";
+  }
+}
+
+async function loadStatus() {
+  try {
+    const { body } = await api("/search/status");
+    const pending = body.pending_events ?? "?";
+    const down = body.indexed_documents === null;
+    const cls = down ? "down" : pending ? "lag" : "";
+    $("#status").innerHTML = `<span class="dot ${cls}"></span>` +
+      (down ? "Elasticsearch no disponible" : `${body.indexed_documents} documentos indexados`) +
+      ` · ${pending} eventos pendientes · ${body.dead_letter_events ?? "?"} en DLQ`;
+  } catch {
+    $("#status").innerHTML = `<span class="dot down"></span>Servicio de búsqueda no disponible`;
+  }
+}
+
+// --- Eventos de la interfaz ---
+$("#channel-list").addEventListener("click", (e) => {
+  const button = e.target.closest(".ch");
+  if (button) selectChannel(button.dataset.id);
+});
+
+$("#results").addEventListener("click", (e) => {
+  const result = e.target.closest(".result");
+  if (result && !e.target.closest("a")) selectChannel(result.dataset.channel);
+});
+
+$("#pager").addEventListener("click", (e) => {
+  if (e.target.dataset.offset) runSearch(Number(e.target.dataset.offset));
+});
+
+$("#me").addEventListener("change", () => loadMessages());
+
+$("#new-user").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    const { body } = await api("/users", { method: "POST", body: JSON.stringify({ display_name: e.target.name.value }) });
+    e.target.reset(); await loadUsers(); $("#me").value = body.id; loadMessages();
+  } catch (error) { toast(error.message); }
+});
+
+$("#new-channel").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    const { body } = await api("/channels", { method: "POST", body: JSON.stringify({ name: e.target.name.value }) });
+    e.target.reset(); await loadChannels(); selectChannel(body.id);
+  } catch (error) { toast(error.message); }
+});
+
+$("#composer").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!state.channel || !$("#me").value) return toast("Elige un canal y un usuario");
+  const input = e.target.content;
+  try {
+    await api(`/channels/${state.channel}/messages`, {
+      method: "POST", body: JSON.stringify({ author_id: $("#me").value, content: encodeMentions(input.value) }),
+    });
+    input.value = ""; loadMessages(true);
+  } catch (error) { toast(error.message); }
+});
+
+$("#messages").addEventListener("click", async (e) => {
+  const act = e.target.dataset.act;
+  if (!act) return;
+  const id = e.target.closest(".msg").dataset.id;
+  const message = $("#messages")._messages.get(id);
+  const path = `/channels/${state.channel}/messages/${id}`;
+  try {
+    if (act === "delete" && confirm("¿Borrar el mensaje?")) {
+      await api(path, { method: "DELETE" });
+    } else if (act === "edit") {
+      const decoded = message.content.replace(/<@([0-9a-f-]{36})>/gi, (_, uid) => "@" + userName(uid));
+      const content = prompt("Editar mensaje", decoded);
+      if (!content || content === decoded) return;
+      await api(path, { method: "PATCH", body: JSON.stringify({ content: encodeMentions(content) }) });
+    }
+    loadMessages();
+  } catch (error) { toast(error.message); }
+});
+
+$("#search-form").addEventListener("submit", (e) => { e.preventDefault(); runSearch(0); });
+
+(async () => {
+  try {
+    await loadUsers();
+    await loadChannels();
+  } catch (error) { toast("No se pudo cargar: " + error.message); }
+  runSearch(0);
+  loadStatus();
+  setInterval(() => { loadMessages().catch(() => {}); loadStatus(); }, 2000);
+})();
+</script>
+</body>
+</html>

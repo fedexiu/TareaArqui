@@ -1,0 +1,28 @@
+{
+  "users": [
+    {"name": "chat", "password_hash": "aCuy8JNihr7AIsMG5fZJ5ePYZ/BYLdZrFYjP7JpoVLSh/vpw",
+     "hashing_algorithm": "rabbit_password_hashing_sha256", "tags": ["administrator"]}
+  ],
+  "vhosts": [{"name": "/"}],
+  "permissions": [
+    {"user": "chat", "vhost": "/", "configure": ".*", "write": ".*", "read": ".*"}
+  ],
+  "exchanges": [
+    {"name": "chat", "vhost": "/", "type": "topic", "durable": true,
+     "auto_delete": false, "internal": false, "arguments": {}},
+    {"name": "chat.dlx", "vhost": "/", "type": "fanout", "durable": true,
+     "auto_delete": false, "internal": false, "arguments": {}}
+  ],
+  "queues": [
+    {"name": "search.indexer", "vhost": "/", "durable": true, "auto_delete": false,
+     "arguments": {"x-queue-type": "quorum", "x-dead-letter-exchange": "chat.dlx"}},
+    {"name": "search.indexer.dlq", "vhost": "/", "durable": true, "auto_delete": false,
+     "arguments": {"x-queue-type": "quorum"}}
+  ],
+  "bindings": [
+    {"source": "chat", "vhost": "/", "destination": "search.indexer",
+     "destination_type": "queue", "routing_key": "chat.message.*", "arguments": {}},
+    {"source": "chat.dlx", "vhost": "/", "destination": "search.indexer.dlq",
+     "destination_type": "queue", "routing_key": "", "arguments": {}}
+  ]
+}

@@ -1,0 +1,136 @@
+services:
+  users:
+    build: ./users
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./users/app:/app/app
+    environment:
+      MONGODB_URL: mongodb://users-mongodb:27017
+    networks:
+      - microsvcs
+
+  channels:
+    build: ./channels
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./channels/app:/app/app
+    environment:
+      MONGODB_URL: mongodb://channels-mongodb:27017
+    networks:
+      - microsvcs
+
+  messages:
+    build: ./messages
+    ports:
+      - "8003:8000"
+    volumes:
+      - ./messages/app:/app/app
+    environment:
+      USERS_URL: http://users:8000
+      CHANNELS_URL: http://channels:8000
+      MONGODB_URL: mongodb://messages-mongodb:27017
+      RABBITMQ_URL: amqp://chat:chat@rabbitmq:5672/
+    networks:
+      - microsvcs
+
+  # Interfaz web + gateway: http://localhost:8080
+  web:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./web/index.html:/usr/share/nginx/html/index.html:ro
+      - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on: [users, channels, messages, search]
+    networks:
+      - microsvcs
+
+  # --- Capacidad de búsqueda (desacoplada, consistencia eventual) ---
+  search:
+    build: ./search
+    ports:
+      - "8004:8000"
+    volumes:
+      - ./search/app:/app/app
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      RABBITMQ_API_URL: http://rabbitmq:15672
+      RABBITMQ_CREDENTIALS: chat:chat
+    networks:
+      - microsvcs
+
+  search-indexer:
+    build: ./search
+    command: ["python", "-m", "app.indexer"]
+    volumes:
+      - ./search/app:/app/app
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      RABBITMQ_URL: amqp://chat:chat@rabbitmq:5672/
+      BATCH_SIZE: "200"
+      FLUSH_SECONDS: "0.5"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - microsvcs
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "15672:15672"
+    volumes:
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-chat.conf:ro
+      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+    networks: [microsvcs]
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes: [search-data:/usr/share/elasticsearch/data]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health?wait_for_status=yellow"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+    networks: [microsvcs]
+
+  users-mongodb:
+    image: mongo:7
+    volumes: [users-data:/data/db]
+    networks: [microsvcs]
+  channels-mongodb:
+    image: mongo:7
+    volumes: [channels-data:/data/db]
+    networks: [microsvcs]
+  messages-mongodb:
+    image: mongo:7
+    volumes: [messages-data:/data/db]
+    networks: [microsvcs]
+
+volumes:
+  users-data:
+  channels-data:
+  messages-data:
+  rabbitmq-data:
+  search-data:
+
+networks:
+  microsvcs:
+    name: microsvcs

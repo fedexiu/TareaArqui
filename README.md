@@ -185,4 +185,4 @@ docker compose start elasticsearch    # el indexador procesa los eventos pendien
   Discord. Para obtenerlos, el cliente consulta `messages`.
 * No hay *stemming*: buscar "reunión" no encuentra "reuniones".
 
-Se puede revisar la propuesta de capacidad vertical en Presentación Capacidad Vertical.pdf
+Se puede revisar la propuesta de capacidad vertical en [presentación](./Presentacion_capacidad_vertical.pdf)

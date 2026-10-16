@@ -10,7 +10,7 @@ Requisitos: Docker con Docker Compose, y Python 3.10+ para el script de datos
 (solo usa la librería estándar). Elasticsearch necesita ~1 GB de RAM libre.
 
 ```bash
-cd Tarea
+cd TareaArqui
 docker compose up -d --build   # 1. levanta todo (la primera vez tarda en descargar imágenes)
 python3 seed.py                # 2. crea usuarios, canales y mensajes de ejemplo
 ```
@@ -184,3 +184,5 @@ docker compose start elasticsearch    # el indexador procesa los eventos pendien
 * Los resultados no traen mensajes de contexto alrededor del hit, como hace
   Discord. Para obtenerlos, el cliente consulta `messages`.
 * No hay *stemming*: buscar "reunión" no encuentra "reuniones".
+
+Se puede revisar la propuesta de capacidad vertical en Presentación Capacidad Vertical.pdf
